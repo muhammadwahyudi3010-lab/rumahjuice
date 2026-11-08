@@ -80,8 +80,12 @@ nav button{font-family:var(--fd);font-size:15px}nav button.on{color:#ff5a00}
 <nav id="nav"></nav>
 <div class="toast" id="toast"></div>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.58.0/dist/umd/supabase.js"></script>
 <script>
 var KEY="warungjus-v1";
+// === ISI DUA BARIS INI dari Supabase (Project Settings > API Keys) ===
+var CFG={url:"https://dsrqzrysimvsabjxeypo.supabase.co",key:"sb_publishable_ipp_If-ZiKd2Yl2yDmTheA_nE2Fyr9x"};
+// Pakai kunci "publishable" (sb_publishable_...) atau "anon". JANGAN pakai kunci "secret"/"service_role".
 var DEF={menu:[{id:1,name:"Jus Alpukat",price:15000,group:"juice"},{id:2,name:"Jus Jeruk",price:10000,group:"juice"},{id:3,name:"Jus Mangga",price:12000,group:"juice"},{id:4,name:"Jus Semangka",price:8000,group:"juice"}],tops:[{id:101,name:"Boba",price:3000},{id:102,name:"Susu",price:2000},{id:103,name:"Cincau",price:2000}],tx:[]};
 var RENT=[{id:201,name:"Milo",price:4000,group:"renteng"},{id:202,name:"Good Day",price:4000,group:"renteng"},{id:203,name:"Energen",price:4000,group:"renteng"},{id:204,name:"Nutrisari",price:3000,group:"renteng"}];
 var S;try{S=JSON.parse(localStorage.getItem(KEY))||DEF}catch(e){S=DEF}
@@ -131,9 +135,35 @@ function openMenu(){var o=document.getElementById("ovl");if(!o){o=document.creat
 function ovlList(){var l=document.getElementById("ovl-list");if(!l)return;var q=(pos.q||"").toLowerCase(),it=ranked(pos.group).filter(function(m){return m.name.toLowerCase().indexOf(q)>-1});l.innerHTML=it.length?it.map(function(m){var c=pos.cart.filter(function(x){return x.mid===m.id}).reduce(function(a,x){return a+x.qty},0);return '<button data-oadd="'+m.id+'">'+esc(m.name)+'<span>'+rp(m.price)+'</span>'+(c?'<span style="color:var(--pri);font-weight:700">x'+c+'</span>':"")+'</button>'}).join(""):'<div class="empty">Menu tidak ditemukan.</div>';var n=pos.cart.reduce(function(a,x){return a+x.qty},0);document.getElementById("ovl-bar").innerHTML='<span>'+n+' item &middot; <b>'+rp(cartTotal())+'</b></span><button class="btn" data-oclose="1" style="margin:0;width:auto;padding:10px 18px">Selesai</button>'}
 function ro(){if(DB&&!canW){toast("Akses Anda hanya lihat saja");return true}return false}
 function lmiss(){var n=0;["tx","menu","tops"].forEach(function(c){LOCAL[c].forEach(function(x){if((c==="tx"||x.id>1000)&&!S[c].some(function(y){return y.id===x.id}))n++})});return n}
-function banner(){var s;if(!DB)s="Mode lokal: data hanya tersimpan di perangkat ini.";else if(!loaded)s="Menghubungkan ke data bersama...";else if(!canW)s="Data bersama (akses lihat saja). Minta pemilik menjadikan Anda Editor agar bisa mencatat.";else s="Data bersama aktif: semua Editor melihat catatan yang sama.";var m=DB&&loaded&&canW?lmiss():0;return '<div style="background:#fff6c4;border:2px solid #ffb300;border-radius:10px;padding:8px 10px;font-size:12px;margin-bottom:12px;color:var(--tx)">'+s+(m?' <button class="btn sm" data-merge="1" style="color:var(--tx);margin-left:6px">Gabungkan '+m+' data lokal</button>':"")+'</div>'}
+function banner(){var s;if(!DB)s="Mode lokal: data hanya tersimpan di perangkat ini.";else if(!loaded)s="Menghubungkan ke cloud...";else if(!canW)s="Akses ditolak: perubahan tidak bisa disimpan ke cloud.";else s="Cloud aktif ("+esc(UEMAIL)+"): data tersimpan online dan terkunci dengan login.";var m=DB&&loaded&&canW?lmiss():0;return '<div style="background:#fff6c4;border:2px solid #ffb300;border-radius:10px;padding:8px 10px;font-size:12px;margin-bottom:12px;color:var(--tx)">'+s+(m?' <button class="btn sm" data-merge="1" style="color:var(--tx);margin-left:6px">Gabungkan '+m+' data lokal</button>':"")+(DB?' <button class="btn sm" data-logout="1" style="color:var(--tx);margin-left:6px">Keluar</button>':"")+'</div>'}
 function listen(c){DB.collection(c).onSnapshot(function(snap){var a=snap.docs.map(function(d){return JSON.parse(JSON.stringify(d.data()))});synced[c]={};a.forEach(function(x){synced[c][x.id]=JSON.stringify(x)});S[c]=a.sort(function(p,q){return p.id-q.id});if(c==="tops")S.tops.forEach(function(p){if(!p.group)p.group="juice"});got[c]=1;if(got.tx&&got.menu&&got.tops&&!loaded){loaded=true;if(!S.tx.length&&!S.menu.length&&!S.tops.length&&canW){S.menu=LOCAL.menu.slice();S.tops=LOCAL.tops.slice();S.tx=LOCAL.tx.slice();save()}if(canW&&!S.cloudRT){S.cloudRT=1;if(!S.tops.some(function(p){return p.group==="renteng"})){S.tops=S.tops.concat(JSON.parse(JSON.stringify(RTOP)));save()}}if(canW&&!S.cloudM){S.cloudM=1;addSamples();save()}}render()},function(e){onErr(e)})}
-async function initCloud(){try{if(!window.claude||!claude.use)return;var db=await claude.use("db");if(!db)return;var u=await claude.use("user");try{if(u&&(await u.can("data.write"))===false)canW=false}catch(e){}DB=db;render();["tx","menu","tops"].forEach(listen)}catch(e){}}
+var SB=null,UID=null,UEMAIL="",pend=0,leaving=false,rf={},tm={};
+function fin(){pend--}
+function chk(r){if(r.error){var e=r.error;throw{code:e.code==="42501"?"invalid_argument":e.code,message:e.message}}return r}
+function pull(c){var cb=rf[c];if(!cb||!SB)return;SB.from("docs").select("id,data").eq("user_id",UID).eq("coll",c).then(function(r){if(r.error){cb.er({code:r.error.code,message:r.error.message});return}if(pend>0){sched(c);return}cb.ok({docs:r.data.map(function(x){return{data:function(){return x.data}}})})})}
+function sched(c){clearTimeout(tm[c]);tm[c]=setTimeout(function(){pull(c)},pend>0?600:350)}
+function mkDB(){return{collection:function(c){return{
+doc:function(id){id=String(id);return{
+set:function(o){pend++;return SB.from("docs").upsert({user_id:UID,coll:c,id:id,data:o}).then(chk).finally(fin)},
+delete:function(){pend++;return SB.from("docs").delete().eq("user_id",UID).eq("coll",c).eq("id",id).then(chk).finally(fin)}}},
+onSnapshot:function(ok,er){rf[c]={ok:ok,er:er};pull(c)}}}}}
+function showLogin(msg){var o=document.getElementById("login");if(!o){o=document.createElement("div");o.id="login";document.body.appendChild(o)}
+o.style.cssText="position:fixed;top:0;left:0;right:0;bottom:0;z-index:30;background:#ffe9a0;display:flex;align-items:center;justify-content:center;padding:20px;overflow:auto";
+o.innerHTML='<div class="card" style="width:100%;max-width:360px"><h1>Rumah Juice</h1><p class="sub">Masuk untuk membuka pembukuan</p><label>Email</label><input id="l-mail" type="email" autocomplete="username"><label>Password</label><input id="l-pass" type="password" autocomplete="current-password"><button class="btn" id="l-go" style="margin-top:14px">Masuk</button><p id="l-err" style="color:var(--out);font-size:13px;min-height:18px;margin:10px 0 0">'+esc(msg||"")+'</p></div>';
+document.getElementById("l-go").onclick=doLogin;document.getElementById("l-pass").onkeydown=function(e){if(e.key==="Enter")doLogin()}}
+async function doLogin(){if(!SB)return;var m=document.getElementById("l-mail").value.trim(),p=document.getElementById("l-pass").value,er=document.getElementById("l-err"),b=document.getElementById("l-go");if(!m||!p){er.textContent="Isi email dan password";return}
+b.disabled=true;b.textContent="Masuk...";var r;try{r=await SB.auth.signInWithPassword({email:m,password:p})}catch(e){r={error:e}}
+b.disabled=false;b.textContent="Masuk";if(r.error||!r.data||!r.data.session){er.textContent="Email atau password salah, atau tidak ada koneksi";return}start(r.data.session)}
+function start(ses){UID=ses.user.id;UEMAIL=ses.user.email||"";var l=document.getElementById("login");if(l)l.remove();document.getElementById("app").style.display="";document.getElementById("nav").style.display="";DB=mkDB();render();["tx","menu","tops"].forEach(listen);
+SB.channel("docs-"+UID).on("postgres_changes",{event:"*",schema:"public",table:"docs",filter:"user_id=eq."+UID},function(p){var c=(p.new&&p.new.coll)||(p.old&&p.old.coll);if(c)sched(c)}).subscribe();
+document.addEventListener("visibilitychange",function(){if(!document.hidden)["tx","menu","tops"].forEach(sched)})}
+async function doLogout(){if(pend>0){toast("Masih menyimpan, coba lagi sebentar");return}leaving=true;try{localStorage.removeItem(KEY)}catch(e){}try{await SB.auth.signOut()}catch(e){}location.reload()}
+async function boot(){if(!/^https:\/\/[a-z0-9-]+\.supabase\.co\/?$/.test(CFG.url)||CFG.key.indexOf("ISI_")===0){render();return}
+document.getElementById("app").style.display="none";document.getElementById("nav").style.display="none";
+if(!window.supabase){showLogin("Pustaka Supabase gagal dimuat. Cek internet lalu muat ulang halaman.");return}
+SB=window.supabase.createClient(CFG.url,CFG.key);SB.auth.onAuthStateChange(function(ev){if(ev==="SIGNED_OUT"&&UID&&!leaving)location.reload()});
+var r;try{r=await SB.auth.getSession()}catch(e){r={}}
+if(r&&r.data&&r.data.session)start(r.data.session);else showLogin("")}
 function today(){var d=new Date();return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0")}
 function ym(d){return d.slice(0,7)}
 function rp(n){return "Rp "+Math.round(n).toLocaleString("id-ID")}
@@ -228,6 +258,7 @@ function render(){
 document.addEventListener("click",function(e){
   var b=e.target.closest("button");if(!b)return;var d=b.dataset;
   if(d.tab){tab=d.tab;render();window.scrollTo(0,0)}
+  else if(d.logout){doLogout()}
   else if(d.more){openMenu()}
   else if(d.oadd){addCart(d.oadd);ovlList()}
   else if(d.oclose){var ov=document.getElementById("ovl");if(ov)ov.remove();render()}
@@ -263,7 +294,7 @@ document.addEventListener("click",function(e){
 });
 document.addEventListener("input",function(e){if(e.target.id==="q-menu"){pos.q=e.target.value;ovlList()}});
 document.addEventListener("change",function(e){if(e.target.id==="r-date"&&e.target.value){pr.ref=e.target.value;render()}});
-render();initCloud();
+boot();
 </script>
 </body>
 </html>
